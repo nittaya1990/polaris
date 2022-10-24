@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 /**
  * Tencent is pleased to support the open source community by making Polaris available.
  *
@@ -18,9 +21,10 @@
 package test
 
 import (
-	"github.com/polarismesh/polaris-server/test/http"
-	"github.com/polarismesh/polaris-server/test/resource"
 	"testing"
+
+	"github.com/polarismesh/polaris/test/http"
+	"github.com/polarismesh/polaris/test/resource"
 )
 
 /**
@@ -31,7 +35,7 @@ func TestCircuitBreaker(t *testing.T) {
 
 	client := http.NewClient(httpserverAddress, httpserverVersion)
 
-	//-------------------------------------------------------
+	// -------------------------------------------------------
 	namespaces := resource.CreateNamespaces()
 	// 创建命名空间
 	ret, err := client.CreateNamespaces(namespaces)
@@ -41,7 +45,7 @@ func TestCircuitBreaker(t *testing.T) {
 	for index, item := range ret.GetResponses() {
 		namespaces[index].Token = item.GetNamespace().GetToken()
 	}
-	t.Log("create namepsaces success")
+	t.Log("create namespaces success")
 
 	circuitBreakers := resource.CreateCircuitBreakers(namespaces[0])
 
@@ -100,7 +104,7 @@ func TestCircuitBreaker(t *testing.T) {
 		t.Fatalf("get circuit breaker version fail, err: %s", err.Error())
 	}
 
-	//-------------------------------------------------------
+	// -------------------------------------------------------
 	services := resource.CreateServices(namespaces[0])
 	// 创建服务
 	ret, err = client.CreateServices(services)
@@ -111,7 +115,7 @@ func TestCircuitBreaker(t *testing.T) {
 		services[index].Token = item.GetService().GetToken()
 	}
 	t.Log("create services success")
-	//-------------------------------------------------------
+	// -------------------------------------------------------
 
 	// 发布熔断规则
 	configReleases := resource.CreateConfigRelease(services, newCircuitBreakers)
@@ -142,11 +146,11 @@ func TestCircuitBreaker(t *testing.T) {
 	circuitBreakers = append(circuitBreakers, newCircuitBreakers...)
 	err = client.DeleteCircuitBreakers(circuitBreakers)
 	if err != nil {
-		t.Fatalf("delete rate limits fail，error: %s", err.Error())
+		t.Fatalf("delete circuitbreaker fail，error: %s", err.Error())
 	}
-	t.Log("delete rate limits success")
+	t.Log("delete circuitbreaker success")
 
-	//-------------------------------------------------------
+	// -------------------------------------------------------
 
 	// 删除服务
 	err = client.DeleteServices(services)
@@ -160,5 +164,5 @@ func TestCircuitBreaker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delete namespaces fail，error: %s", err.Error())
 	}
-	t.Log("delete namepsaces success")
+	t.Log("delete namespaces success")
 }

@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/polarismesh/polaris-server/common/log"
+	"github.com/polarismesh/polaris/common/log"
 )
 
 const (
@@ -31,32 +31,32 @@ const (
 	HealthcheckAccess string = "healthcheck"
 )
 
-/**
- * @brief API服务器配置
- */
+// Config API服务器配置
 type Config struct {
 	Name   string
 	Option map[string]interface{}
 	API    map[string]APIConfig
 }
 
-/**
- * @brief API配置
- */
+// APIConfig API配置
 type APIConfig struct {
 	Enable  bool
 	Include []string
 }
 
-/**
- * @brief API服务器接口
- */
+// Apiserver API服务器接口
 type Apiserver interface {
+	// GetProtocol API协议名
 	GetProtocol() string
+	// GetPort API的监听端口
 	GetPort() uint32
+	// Initialize API初始化逻辑
 	Initialize(ctx context.Context, option map[string]interface{}, api map[string]APIConfig) error
+	// Run API服务的主逻辑循环
 	Run(errCh chan error)
+	// Stop 停止API端口监听
 	Stop()
+	// Restart 重启API
 	Restart(option map[string]interface{}, api map[string]APIConfig, errCh chan error) error
 }
 
@@ -64,9 +64,7 @@ var (
 	Slots = make(map[string]Apiserver)
 )
 
-/**
- * @brief 注册API服务器
- */
+// Register 注册API服务器
 func Register(name string, server Apiserver) error {
 	if _, exist := Slots[name]; exist {
 		return fmt.Errorf("apiserver name:%s exist", name)
@@ -77,9 +75,7 @@ func Register(name string, server Apiserver) error {
 	return nil
 }
 
-/**
- * @brief 获取客户端openMethod
- */
+// GetClientOpenMethod 获取客户端openMethod
 func GetClientOpenMethod(include []string, protocol string) (map[string]bool, error) {
 	clientAccess := make(map[string][]string)
 	clientAccess[DiscoverAccess] = []string{"Discover", "ReportClient"}

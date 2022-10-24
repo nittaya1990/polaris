@@ -22,18 +22,17 @@ import (
 	"fmt"
 	"time"
 
-	api "github.com/polarismesh/polaris-server/common/api/v1"
-	"github.com/polarismesh/polaris-server/naming"
 	"google.golang.org/grpc/metadata"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
+	"github.com/polarismesh/polaris/common/utils"
 )
 
-/**
- * @brief 注册服务实例
- */
+// RegisterInstance 注册服务实例
 func (c *Client) RegisterInstance(instance *api.Instance) error {
 	fmt.Printf("\nregister instance\n")
 
-	md := metadata.Pairs("request-id", naming.NewUUID())
+	md := metadata.Pairs("request-id", utils.NewUUID())
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -50,16 +49,14 @@ func (c *Client) RegisterInstance(instance *api.Instance) error {
 	return nil
 }
 
-/**
- * @brief 反注册服务实例
- */
+// DeregisterInstance 反注册服务实例
 func (c *Client) DeregisterInstance(instance *api.Instance) error {
 	fmt.Printf("\nderegister instance\n")
 
-	md := metadata.Pairs("request-id", naming.NewUUID())
+	md := metadata.Pairs("request-id", utils.NewUUID())
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	rsp, err := c.Worker.DeregisterInstance(ctx, instance)

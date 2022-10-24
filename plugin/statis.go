@@ -21,25 +21,32 @@ import (
 	"os"
 	"sync"
 
-	"github.com/polarismesh/polaris-server/common/log"
+	commonLog "github.com/polarismesh/polaris/common/log"
 )
 
 var (
-	statisOnce = &sync.Once{}
+	statisOnce sync.Once
 )
 
-/**
- * Statis 统计插件接口
- */
+const (
+	ComponentServer = "server"
+	ComponentRedis  = "redis"
+
+	ComponentProtobufCache = "protobuf"
+)
+
+// Statis 统计插件接口
 type Statis interface {
 	Plugin
 
-	AddAPICall(api string, code int, duration int64) error
+	AddAPICall(api string, protocol string, code int, duration int64) error
+
+	AddRedisCall(api string, code int, duration int64) error
+
+	AddCacheCall(component string, cacheType string, miss bool, call int) error
 }
 
-/**
- * GetStatis 获取统计插件
- */
+// GetStatis 获取统计插件
 func GetStatis() Statis {
 	c := &config.Statis
 
@@ -50,7 +57,7 @@ func GetStatis() Statis {
 
 	statisOnce.Do(func() {
 		if err := plugin.Initialize(c); err != nil {
-			log.Errorf("plugin init err: %s", err.Error())
+			commonLog.GetScopeOrDefaultByName(c.Name).Errorf("plugin init err: %s", err.Error())
 			os.Exit(-1)
 		}
 	})

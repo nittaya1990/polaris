@@ -23,7 +23,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var defaultScope = RegisterScope(DefaultScopeName, "Unscoped logging messages.", 0)
+var defaultScope = RegisterScope(DefaultLoggerName, "Unscoped logging messages.", 0)
 
 // Fatal outputs a message at fatal level.
 func Fatal(msg string, fields ...zapcore.Field) {
@@ -39,7 +39,7 @@ func Fatala(args ...interface{}) {
 	}
 }
 
-// Fatalf uses fmt.Sprintf to construct and log a message at fatal level.
+// Fatalf uses fmt.Sprintf to construct and log a MESSAGE at fatal level.
 func Fatalf(template string, args ...interface{}) {
 	if defaultScope.GetOutputLevel() >= FatalLevel {
 		msg := template

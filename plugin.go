@@ -18,21 +18,26 @@
 package main
 
 import (
-	_ "github.com/polarismesh/polaris-server/apiserver/grpcserver"
-	_ "github.com/polarismesh/polaris-server/apiserver/httpserver"
-	_ "github.com/polarismesh/polaris-server/apiserver/l5pbserver"
-
-	_ "github.com/polarismesh/polaris-server/naming/cache"
-	_ "github.com/polarismesh/polaris-server/store/boltdbStore"
-	_ "github.com/polarismesh/polaris-server/store/defaultStore"
-
-	_ "github.com/polarismesh/polaris-server/plugin/cmdb/memory"
-
-	_ "github.com/polarismesh/polaris-server/plugin/auth/platform"
-	_ "github.com/polarismesh/polaris-server/plugin/discoverStatis/discoverLocal"
-	_ "github.com/polarismesh/polaris-server/plugin/history/logger"
-	_ "github.com/polarismesh/polaris-server/plugin/parsePassword"
-	_ "github.com/polarismesh/polaris-server/plugin/ratelimit/lrurate"
-	_ "github.com/polarismesh/polaris-server/plugin/ratelimit/tokenBucket"
-	_ "github.com/polarismesh/polaris-server/plugin/statis/local"
+	_ "github.com/polarismesh/polaris/apiserver/eurekaserver"
+	_ "github.com/polarismesh/polaris/apiserver/grpcserver/config"
+	_ "github.com/polarismesh/polaris/apiserver/grpcserver/discover"
+	_ "github.com/polarismesh/polaris/apiserver/httpserver"
+	_ "github.com/polarismesh/polaris/apiserver/l5pbserver"
+	_ "github.com/polarismesh/polaris/apiserver/prometheussd"
+	_ "github.com/polarismesh/polaris/apiserver/xdsserverv3"
+	_ "github.com/polarismesh/polaris/auth/defaultauth"
+	_ "github.com/polarismesh/polaris/cache"
+	_ "github.com/polarismesh/polaris/plugin/auth/defaultauth"
+	_ "github.com/polarismesh/polaris/plugin/cmdb/memory"
+	_ "github.com/polarismesh/polaris/plugin/discoverevent/local"
+	_ "github.com/polarismesh/polaris/plugin/discoverstat/discoverlocal"
+	_ "github.com/polarismesh/polaris/plugin/healthchecker/heartbeatmemory"
+	_ "github.com/polarismesh/polaris/plugin/healthchecker/heartbeatredis"
+	_ "github.com/polarismesh/polaris/plugin/history/logger"
+	_ "github.com/polarismesh/polaris/plugin/password"
+	_ "github.com/polarismesh/polaris/plugin/ratelimit/lrurate"
+	_ "github.com/polarismesh/polaris/plugin/ratelimit/token"
+	_ "github.com/polarismesh/polaris/plugin/statis/local"
+	_ "github.com/polarismesh/polaris/store/boltdb"
+	_ "github.com/polarismesh/polaris/store/sqldb"
 )

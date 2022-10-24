@@ -23,13 +23,12 @@ import (
 	"fmt"
 	"io"
 
-	api "github.com/polarismesh/polaris-server/common/api/v1"
 	"github.com/golang/protobuf/jsonpb"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
 )
 
-/**
- * @brief 命名空间数组转JSON
- */
+// JSONFromNamespaces 将命名空间数组转换为JSON
 func JSONFromNamespaces(namespaces []*api.Namespace) (*bytes.Buffer, error) {
 	m := jsonpb.Marshaler{Indent: " "}
 
@@ -51,9 +50,7 @@ func JSONFromNamespaces(namespaces []*api.Namespace) (*bytes.Buffer, error) {
 	return buffer, nil
 }
 
-/**
- * @brief 创建命名空间
- */
+// CreateNamespaces 创建命名空间
 func (c *Client) CreateNamespaces(namespaces []*api.Namespace) (*api.BatchWriteResponse, error) {
 	fmt.Printf("\ncreate namespaces\n")
 
@@ -74,15 +71,13 @@ func (c *Client) CreateNamespaces(namespaces []*api.Namespace) (*api.BatchWriteR
 	ret, err := GetBatchWriteResponse(response)
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		return nil, err
+		return ret, err
 	}
 
 	return checkCreateNamespacesResponse(ret, namespaces)
 }
 
-/**
- * @brief 删除命名空间
- */
+// DeleteNamespaces 删除命名空间
 func (c *Client) DeleteNamespaces(namespaces []*api.Namespace) error {
 	fmt.Printf("\ndelete namespaces\n")
 
@@ -113,9 +108,34 @@ func (c *Client) DeleteNamespaces(namespaces []*api.Namespace) error {
 	return nil
 }
 
-/**
- * @brief 更新命名空间
- */
+// DeleteNamespaces 删除命名空间
+func (c *Client) DeleteNamespacesGetResp(namespaces []*api.Namespace) (*api.BatchWriteResponse, error) {
+	fmt.Printf("\ndelete namespaces\n")
+
+	url := fmt.Sprintf("http://%v/naming/%v/namespaces/delete", c.Address, c.Version)
+
+	body, err := JSONFromNamespaces(namespaces)
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		return nil, err
+	}
+
+	response, err := c.SendRequest("POST", url, body)
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		return nil, err
+	}
+
+	resp, err := GetBatchWriteResponse(response)
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		return resp, err
+	}
+
+	return resp, nil
+}
+
+// UpdateNamesapces 更新命名空间
 func (c *Client) UpdateNamesapces(namespaces []*api.Namespace) error {
 	fmt.Printf("\nupdate namespaces\n")
 
@@ -146,10 +166,8 @@ func (c *Client) UpdateNamesapces(namespaces []*api.Namespace) error {
 	return nil
 }
 
-/**
- * @brief 查询命名空间
- */
-func (c *Client) GetNamespaces(namespaces []*api.Namespace) error {
+// GetNamespaces 查询命名空间
+func (c *Client) GetNamespaces(namespaces []*api.Namespace) ([]*api.Namespace, error) {
 	fmt.Printf("\nget namespaces\n")
 
 	url := fmt.Sprintf("http://%v/naming/%v/namespaces", c.Address, c.Version)
@@ -161,27 +179,27 @@ func (c *Client) GetNamespaces(namespaces []*api.Namespace) error {
 	url = c.CompleteURL(url, params)
 	response, err := c.SendRequest("GET", url, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ret, err := GetBatchQueryResponse(response)
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		return err
+		return nil, err
 	}
 
 	if ret.GetCode() == nil || ret.GetCode().GetValue() != api.ExecuteSuccess {
-		return errors.New("invalid batch code")
+		return nil, errors.New("invalid batch code")
 	}
 
 	namespacesSize := len(namespaces)
 
 	if ret.GetAmount() == nil || ret.GetAmount().GetValue() != uint32(namespacesSize) {
-		return errors.New("invalid batch amount")
+		return nil, errors.New("invalid batch amount")
 	}
 
 	if ret.GetSize() == nil || ret.GetSize().GetValue() != uint32(namespacesSize) {
-		return errors.New("invalid batch size")
+		return nil, errors.New("invalid batch size")
 	}
 
 	collection := make(map[string]*api.Namespace)
@@ -191,19 +209,19 @@ func (c *Client) GetNamespaces(namespaces []*api.Namespace) error {
 
 	items := ret.GetNamespaces()
 	if items == nil || len(items) != namespacesSize {
-		return errors.New("invalid batch namespaces")
+		return nil, errors.New("invalid batch namespaces")
 	}
 
 	for _, item := range items {
 		if correctItem, ok := collection[item.GetName().GetValue()]; ok {
 			if result := compareNamespace(correctItem, item); !result {
-				return errors.New("invalid namespace")
+				return nil, errors.New("invalid namespace")
 			}
 		} else {
-			return errors.New("invalid namespace")
+			return nil, errors.New("invalid namespace")
 		}
 	}
-	return nil
+	return items, nil
 }
 
 /**
@@ -253,13 +271,11 @@ func checkCreateNamespacesResponse(ret *api.BatchWriteResponse, namespaces []*ap
 func compareNamespace(correctItem *api.Namespace, item *api.Namespace) bool {
 	correctName := correctItem.GetName().GetValue()
 	correctComment := correctItem.GetComment().GetValue()
-	correctOwners := correctItem.GetOwners().GetValue()
 
 	name := item.GetName().GetValue()
 	comment := item.GetComment().GetValue()
-	owners := item.GetOwners().GetValue()
 
-	if correctName == name && correctComment == comment && correctOwners == owners {
+	if correctName == name && correctComment == comment {
 		return true
 	}
 	return false

@@ -19,25 +19,21 @@ package resource
 
 import (
 	"fmt"
-	"time"
 
-	api "github.com/polarismesh/polaris-server/common/api/v1"
-	"github.com/polarismesh/polaris-server/common/utils"
+	api "github.com/polarismesh/polaris/common/api/v1"
+	"github.com/polarismesh/polaris/common/utils"
 )
 
 const (
 	serviceName = "test-service-%v-%v"
 )
 
-/**
- * @brief 创建测试服务
- */
+// CreateServices creates services
 func CreateServices(namespace *api.Namespace) []*api.Service {
-	nowStr := time.Now().Format("2006-01-02T15:04:05.000000")
 
 	var services []*api.Service
 	for index := 0; index < 2; index++ {
-		name := fmt.Sprintf(serviceName, nowStr, index)
+		name := fmt.Sprintf(serviceName, utils.NewUUID(), index)
 
 		service := &api.Service{
 			Name:       utils.NewStringValue(name),
@@ -58,9 +54,7 @@ func CreateServices(namespace *api.Namespace) []*api.Service {
 	return services
 }
 
-/**
- * @brief 更新测试服务
- */
+// UpdateServices 更新测试服务
 func UpdateServices(services []*api.Service) {
 	for _, service := range services {
 		service.Metadata = map[string]string{"update": "update"}

@@ -1,7 +1,23 @@
+# Tencent is pleased to support the open source community by making Polaris available.
+#
+# Copyright (C) 2019 THL A29 Limited, a Tencent company. All rights reserved.
+#
+# Licensed under the BSD 3-Clause License (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# https://opensource.org/licenses/BSD-3-Clause
+#
+# Unless required by applicable law or agreed to in writing, software distributed
+# under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the License for the
+# specific language governing permissions and limitations under the License.
+
+
 #!/bin/bash
 
-set -ex  # Exit on error; debugging enabled.
-set -o pipefail  # Fail a pipe if any sub-command fails.
+set -ex         # Exit on error; debugging enabled.
+set -o pipefail # Fail a pipe if any sub-command fails.
 
 # not makes sure the command passed to it does not exit with a return code of 0.
 not() {
@@ -59,19 +75,23 @@ misspell -error .
 # - gofmt, goimports, golint (with exceptions for generated code), go vet,
 # go mod tidy.
 # Perform these checks on each module inside polaris-go.
-for MOD_FILE in $(find . -name 'go.mod'); do
-  MOD_DIR=$(dirname ${MOD_FILE})
-  pushd ${MOD_DIR}
-  go vet -all ./... | fail_on_output
-  #gofmt -s -d -l . 2>&1 | fail_on_output
-  #goimports -l . 2>&1 | not grep -vE "\.pb\.go"
-  #golint ./... 2>&1 | not grep -vE "\.pb\.go"
+# for MOD_FILE in $(find . -name 'go.mod'); do
+#   MOD_DIR=$(dirname ${MOD_FILE})
+#   pushd ${MOD_DIR}
+#   go vet -all ./... | fail_on_output
+#   gofmt -s -d -l . 2>&1 | fail_on_output
+#   goimports -l . 2>&1 | not grep -vE "\.pb\.go" | not grep -vE "mock\.go"
+#   golint ./... 2>&1 | not grep -vE "\.pb\.go"| not grep -vE "test"
 
-  go mod tidy
-  git status --porcelain 2>&1 | fail_on_output || \
-    (git status; git --no-pager diff; exit 1)
-  popd
-done
+#   go mod tidy
+#   git status --porcelain 2>&1 | fail_on_output ||
+#     (
+#       git status
+#       git --no-pager diff
+#       exit 1
+#     )
+#   popd
+# done
 
 # - Collection of static analysis checks
 #

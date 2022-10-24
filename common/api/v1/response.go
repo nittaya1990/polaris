@@ -28,6 +28,7 @@ import (
 type ResponseMessage interface {
 	proto.Message
 	GetCode() *wrappers.UInt32Value
+	GetInfo() *wrappers.StringValue
 }
 
 /**
@@ -44,8 +45,10 @@ func CalcCode(rm ResponseMessage) int {
 func (b *BatchWriteResponse) Collect(response *Response) {
 	// 非200的code，都归为异常
 	if CalcCode(response) != 200 {
-		b.Code.Value = ExecuteException
-		b.Info.Value = code2info[ExecuteException]
+		if response.GetCode().GetValue() >= b.GetCode().GetValue() {
+			b.Code.Value = response.GetCode().GetValue()
+			b.Info.Value = code2info[b.GetCode().GetValue()]
+		}
 	}
 
 	b.Size.Value++
@@ -196,26 +199,6 @@ func NewConfigResponse(code uint32, configRelease *ConfigRelease) *Response {
 		Info:          &wrappers.StringValue{Value: code2info[code]},
 		ConfigRelease: configRelease,
 	}
-}
-
-/**
- * @brief 创建回复带平台信息
- */
-func NewPlatformResponse(code uint32, platform *Platform) *Response {
-	return &Response{
-		Code:     &wrappers.UInt32Value{Value: code},
-		Info:     &wrappers.StringValue{Value: code2info[code]},
-		Platform: platform,
-	}
-}
-
-/**
- * @brief 创建带详细信息的平台回复信息
- */
-func NewPlatformResponseWithMsg(code uint32, platform *Platform, msg string) *Response {
-	response := NewPlatformResponse(code, platform)
-	response.Info.Value += ": " + msg
-	return response
 }
 
 /**

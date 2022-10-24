@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 /**
  * Tencent is pleased to support the open source community by making Polaris available.
  *
@@ -18,9 +21,10 @@
 package test
 
 import (
-	"github.com/polarismesh/polaris-server/test/http"
-	"github.com/polarismesh/polaris-server/test/resource"
 	"testing"
+
+	"github.com/polarismesh/polaris/test/http"
+	"github.com/polarismesh/polaris/test/resource"
 )
 
 /**
@@ -46,7 +50,7 @@ func TestRateLimit(t *testing.T) {
 	for index, item := range ret.GetResponses() {
 		namespaces[index].Token = item.GetNamespace().GetToken()
 	}
-	t.Log("create namepsaces success")
+	t.Log("create namespaces success")
 
 	// 创建服务
 	ret, err = client.CreateServices(services)
@@ -58,7 +62,7 @@ func TestRateLimit(t *testing.T) {
 	}
 	t.Log("create services success")
 
-	//-------------------------------------------------------
+	// -------------------------------------------------------
 
 	rateLimits := resource.CreateRateLimits(services)
 
@@ -95,6 +99,13 @@ func TestRateLimit(t *testing.T) {
 	}
 	t.Log("get rate limits success")
 
+	// 禁用限流规则
+	err = client.EnableRateLimits(rateLimits)
+	if err != nil {
+		t.Fatalf("enable rate limits fail, err is %s", err.Error())
+	}
+	t.Log("enable rate limits success")
+
 	// 删除限流规则
 	err = client.DeleteRateLimits(rateLimits)
 	if err != nil {
@@ -102,7 +113,7 @@ func TestRateLimit(t *testing.T) {
 	}
 	t.Log("delete rate limits success")
 
-	//-------------------------------------------------------
+	// -------------------------------------------------------
 
 	// 删除服务
 	err = client.DeleteServices(services)

@@ -22,14 +22,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	api "github.com/polarismesh/polaris-server/common/api/v1"
-	"github.com/golang/protobuf/jsonpb"
 	"io"
+
+	"github.com/golang/protobuf/jsonpb"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
 )
 
-/**
- * @brief 熔断规则数组转JSON
- */
+// JSONFromCircuitBreakers marshals a slice of circuit breakers to JSON. 熔断规则数组转JSON
 func JSONFromCircuitBreakers(circuitBreakers []*api.CircuitBreaker) (*bytes.Buffer, error) {
 	m := jsonpb.Marshaler{Indent: " "}
 
@@ -50,9 +50,7 @@ func JSONFromCircuitBreakers(circuitBreakers []*api.CircuitBreaker) (*bytes.Buff
 	return buffer, nil
 }
 
-/**
- * @brief 发布规则转JSON
- */
+// JSONFromConfigReleases marshals a slice of config releases to JSON. 配置发布规则数组转JSON
 func JSONFromConfigReleases(configReleases []*api.ConfigRelease) (*bytes.Buffer, error) {
 	m := jsonpb.Marshaler{Indent: " "}
 
@@ -73,9 +71,7 @@ func JSONFromConfigReleases(configReleases []*api.ConfigRelease) (*bytes.Buffer,
 	return buffer, nil
 }
 
-/**
- * @brief 创建熔断规则
- */
+// CreateCircuitBreakers creates a slice of circuit breakers from JSON. 创建熔断规则
 func (c *Client) CreateCircuitBreakers(circuitBreakers []*api.CircuitBreaker) (*api.BatchWriteResponse, error) {
 	fmt.Printf("\ncreate circuit breakers\n")
 
@@ -96,15 +92,13 @@ func (c *Client) CreateCircuitBreakers(circuitBreakers []*api.CircuitBreaker) (*
 	ret, err := GetBatchWriteResponse(response)
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		return nil, err
+		return ret, err
 	}
 
 	return checkCreateCircuitBreakersResponse(ret, circuitBreakers)
 }
 
-/**
- * @brief 创建熔断规则版本
- */
+// CreateCircuitBreakerVersions creates a slice of circuit breakers from JSON. 创建熔断规则版本
 func (c *Client) CreateCircuitBreakerVersions(circuitBreakers []*api.CircuitBreaker) (*api.BatchWriteResponse, error) {
 	fmt.Printf("\ncreate circuit breaker versions\n")
 
@@ -124,15 +118,13 @@ func (c *Client) CreateCircuitBreakerVersions(circuitBreakers []*api.CircuitBrea
 	ret, err := GetBatchWriteResponse(response)
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		return nil, err
+		return ret, err
 	}
 
 	return checkCreateCircuitBreakersResponse(ret, circuitBreakers)
 }
 
-/**
- * @brief 更新熔断规则
- */
+// UpdateCircuitBreakers 更新熔断规则
 func (c *Client) UpdateCircuitBreakers(circuitBreakers []*api.CircuitBreaker) error {
 	fmt.Printf("\nupdate circuit breakers\n")
 
@@ -344,7 +336,7 @@ func (c *Client) GetCircuitBreakersRelease(circuitBreaker *api.CircuitBreaker, c
 	size := 1
 
 	if ret.GetAmount() == nil || ret.GetAmount().GetValue() != uint32(size) {
-		return errors.New("invalid batch amount")
+		return fmt.Errorf("invalid batch amount, expect : %d, actual : %d", size, ret.GetAmount().GetValue())
 	}
 
 	if ret.GetSize() == nil || ret.GetSize().GetValue() != uint32(size) {

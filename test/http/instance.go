@@ -24,8 +24,9 @@ import (
 	"io"
 	"reflect"
 
-	api "github.com/polarismesh/polaris-server/common/api/v1"
 	"github.com/golang/protobuf/jsonpb"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
 )
 
 /**
@@ -74,7 +75,7 @@ func (c *Client) CreateInstances(instances []*api.Instance) (*api.BatchWriteResp
 	ret, err := GetBatchWriteResponse(response)
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		return nil, err
+		return ret, err
 	}
 
 	return checkCreateInstancesResponse(ret, instances)
@@ -155,8 +156,8 @@ func (c *Client) GetInstances(instances []*api.Instance) error {
 	url := fmt.Sprintf("http://%v/naming/%v/instances", c.Address, c.Version)
 
 	params := map[string][]interface{}{
-		"service": {instances[0].GetService().GetValue()},
-		"namespace" :{instances[0].GetNamespace().GetValue()},
+		"service":   {instances[0].GetService().GetValue()},
+		"namespace": {instances[0].GetNamespace().GetValue()},
 	}
 
 	url = c.CompleteURL(url, params)
@@ -178,7 +179,7 @@ func (c *Client) GetInstances(instances []*api.Instance) error {
 	instancesSize := len(instances)
 
 	if ret.GetAmount() == nil || ret.GetAmount().GetValue() != uint32(instancesSize) {
-		return errors.New("invalid batch amount")
+		return fmt.Errorf("invalid batch amount, expect %d, obtain %v", instancesSize, ret.GetAmount())
 	}
 
 	if ret.GetSize() == nil || ret.GetSize().GetValue() != uint32(instancesSize) {
@@ -274,8 +275,8 @@ func compareInstance(correctItem *api.Instance, item *api.Instance) bool {
 	correctMeta := correctItem.GetMetadata()
 	correctLogicSet := correctItem.GetLogicSet().GetValue()
 	/*correctCmdbRegion := correctItem.GetLocation().GetRegion().GetValue()
-	correctCmdbZone := correctItem.GetLocation().GetZone().GetValue()
-	correctCmdbCampus := correctItem.GetLocation().GetCampus().GetValue()*/
+	  correctCmdbZone := correctItem.GetLocation().GetZone().GetValue()
+	  correctCmdbCampus := correctItem.GetLocation().GetCampus().GetValue()*/
 
 	id := item.GetId().GetValue()
 	service := item.GetService().GetValue()
@@ -293,8 +294,8 @@ func compareInstance(correctItem *api.Instance, item *api.Instance) bool {
 	meta := item.GetMetadata()
 	logicSet := item.GetLogicSet().GetValue()
 	/*cmdbRegion := item.GetLocation().GetRegion().GetValue()
-	cmdbZone := item.GetLocation().GetZone().GetValue()
-	cmdbCampus := item.GetLocation().GetCampus().GetValue()*/
+	  cmdbZone := item.GetLocation().GetZone().GetValue()
+	  cmdbCampus := item.GetLocation().GetCampus().GetValue()*/
 
 	if correctID == id && correctService == service && correctNamespace == namespace && correctHost == host &&
 		correctPort == port && correctProtocol == protocol && correctVersion == version &&

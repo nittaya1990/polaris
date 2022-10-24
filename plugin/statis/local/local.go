@@ -20,80 +20,135 @@ package local
 import (
 	"time"
 
-	"github.com/polarismesh/polaris-server/plugin"
+	"github.com/polarismesh/polaris/plugin"
+	"github.com/polarismesh/polaris/store"
 )
 
-/**
- * @brief 注册统计插件
- */
+const (
+	PluginName = "local"
+)
+
+// init 注册统计插件
 func init() {
 	s := &StatisWorker{}
 	plugin.RegisterPlugin(s.Name(), s)
 }
 
-/**
- * StatisWorker 本地统计插件
- */
+// StatisWorker 本地统计插件
 type StatisWorker struct {
 	interval time.Duration
 
 	acc chan *APICall
 	acs *APICallStatis
+
+	cacheCall   chan *CacheCall
+	cacheStatis *CacheCallStatis
 }
 
-/**
- * Name 获取统计插件名称
- */
+// Name 获取统计插件名称
 func (s *StatisWorker) Name() string {
-	return "local"
+	return PluginName
 }
 
-/**
- * Initialize 初始化统计插件
- */
+// Initialize 初始化统计插件
 func (s *StatisWorker) Initialize(conf *plugin.ConfigEntry) error {
 	// 设置统计打印周期
+	var err error
 	interval := conf.Option["interval"].(int)
 	s.interval = time.Duration(interval) * time.Second
 
-	outputPath := conf.Option["outputPath"].(string)
+	// 初始化 prometheus 输出
+	prometheusStatis, err := NewPrometheusStatis()
+	if err != nil {
+		return err
+	}
 
 	// 初始化接口调用统计
 	s.acc = make(chan *APICall, 1024)
-	s.acs = &APICallStatis{
-		statis: make(map[string]*APICallStatisItem),
-		logger: newLogger(outputPath + "/" + "apicall.log"),
+	s.acs, err = newAPICallStatis(prometheusStatis)
+	if err != nil {
+		return err
 	}
-
 	go s.Run()
+
+	s.cacheCall = make(chan *CacheCall, 1024)
+	s.cacheStatis, err = newCacheCallStatis(prometheusStatis)
 
 	return nil
 }
 
-/**
- * Destroy 销毁统计插件
- */
+// Destroy 销毁统计插件
 func (s *StatisWorker) Destroy() error {
 	return nil
 }
 
-/**
- * AddAPICall 上报请求
- */
-func (s *StatisWorker) AddAPICall(api string, code int, duration int64) error {
-	s.acc <- &APICall{
-		api:      api,
-		code:     code,
-		duration: duration,
-	}
+const maxAddDuration = 800 * time.Millisecond
 
+// AddAPICall 上报请求
+func (s *StatisWorker) AddAPICall(api string, protocol string, code int, duration int64) error {
+	startTime := time.Now()
+	s.acc <- &APICall{
+		api:       api,
+		protocol:  protocol,
+		code:      code,
+		duration:  duration,
+		component: plugin.ComponentServer,
+	}
+	passDuration := time.Since(startTime)
+	if passDuration >= maxAddDuration {
+		log.Warnf("[APICall]add api call cost %s, exceed max %s", passDuration, maxAddDuration)
+	}
 	return nil
 }
 
-/**
- * Run 主流程
- */
+// AddRedisCall 上报redis请求
+func (s *StatisWorker) AddRedisCall(api string, code int, duration int64) error {
+	s.acc <- &APICall{
+		api:       api,
+		code:      code,
+		duration:  duration,
+		component: plugin.ComponentRedis,
+	}
+	return nil
+}
+
+// AddCacheCall 上报 Cache 指标信息
+func (s *StatisWorker) AddCacheCall(component string, cacheType string, miss bool, call int) error {
+	s.cacheCall <- &CacheCall{
+		cacheType: cacheType,
+		miss:      miss,
+		component: component,
+		count:     int32(call),
+	}
+	return nil
+}
+
+// Run 主流程
 func (s *StatisWorker) Run() {
+
+	store, err := store.GetStore()
+	if err != nil {
+		log.Errorf("[APICall] get store error, %v", err)
+		return
+	}
+
+	nowSeconds, err := store.GetUnixSecond()
+	if err != nil {
+		log.Errorf("[APICall] get now second from store error, %v", err)
+		return
+	}
+	if nowSeconds == 0 {
+		nowSeconds = time.Now().Unix()
+	}
+	dest := nowSeconds
+	dest += 60
+	dest = dest - (dest % 60)
+	diff := dest - nowSeconds
+
+	log.Infof("[APICall] prometheus stats need sleep %ds", diff)
+
+	time.Sleep(time.Duration(diff) * time.Second)
+
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
@@ -101,8 +156,12 @@ func (s *StatisWorker) Run() {
 		select {
 		case <-ticker.C:
 			s.acs.log()
+			s.cacheStatis.log()
 		case ac := <-s.acc:
 			s.acs.add(ac)
+		case ac := <-s.cacheCall:
+			s.cacheStatis.add(ac)
 		}
 	}
+
 }

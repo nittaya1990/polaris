@@ -18,17 +18,17 @@
 package redispool
 
 import (
+	"context"
 	"fmt"
-	"hash/crc32"
-	"math/rand"
-	"strconv"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gomodule/redigo/redis"
-	"github.com/polarismesh/polaris-server/common/log"
-	"github.com/polarismesh/polaris-server/common/model"
+	"github.com/go-redis/redis/v8"
+
+	"github.com/polarismesh/polaris/common/log"
+	"github.com/polarismesh/polaris/plugin"
 )
 
 const (
@@ -38,313 +38,416 @@ const (
 	Set
 	// Del del method define
 	Del
+	// Sadd del method define
+	Sadd
+	// Srem del method define
+	Srem
 )
 
-/**
- * Task ckv任务请求结构体
- */
+var (
+	typeToCommand = map[int]string{
+		Get:  "GET",
+		Set:  "SET",
+		Del:  "DEL",
+		Sadd: "SADD",
+		Srem: "SREM",
+	}
+)
+
+const (
+	// keyPrefix the prefix for hb key
+	keyPrefix = "hb_"
+)
+
+func toRedisKey(instanceID string, compatible bool) string {
+	if compatible {
+		return instanceID
+	}
+	return fmt.Sprintf("%s%s", keyPrefix, instanceID)
+}
+
+// Task ckv任务请求结构体
 type Task struct {
 	taskType int
 	id       string
-	status   int
-	beatTime int64
-	respCh   chan *Resp
+	value    string
+	members  []string
+	respChan chan *Resp
 }
 
-/**
- * Resp ckv任务结果
- */
+// String
+func (t Task) String() string {
+	return fmt.Sprintf("{taskType: %s, id: %s}", typeToCommand[t.taskType], t.id)
+}
+
+// Resp ckv任务结果
 type Resp struct {
-	Value string
-	Err   error
-	Local bool
+	Value       string
+	Err         error
+	Exists      bool
+	Compatible  bool
+	shouldRetry bool
 }
 
-/**
- * MetaData ckv连接池元数据
- */
-type MetaData struct {
-	insConnNum  int
-	kvPasswd    string
-	localHost   string
-	MaxIdle     int
-	IdleTimeout int
-}
-
-/**
- * Instance ckv节点结构体
- */
-type Instance struct {
-	index     uint32 // 节点在连接池中的序号
-	addr      string
-	redisPool *redis.Pool
-	ch        []chan *Task
-	stopCh    chan struct{}
-}
-
-/**
- * Pool ckv连接池结构体
- */
+// Pool ckv连接池结构体
 type Pool struct {
-	mu          sync.Mutex
-	meta        *MetaData
-	instances   []*Instance
-	instanceNum int32
+	config         *Config
+	ctx            context.Context
+	redisClient    redis.UniversalClient
+	redisDead      uint32
+	recoverTimeSec int64
+	statis         plugin.Statis
+	taskChans      []chan *Task
 }
 
-/**
- * NewPool 初始化一个redis连接池实例
- */
-func NewPool(insConnNum int, kvPasswd, localHost string, redisInstances []*model.Instance,
-	maxIdle, idleTimeout int) (*Pool, error) {
-	var instances []*Instance
-	if len(redisInstances) > 0 {
-		for _, instance := range redisInstances {
-			instance := &Instance{
-				redisPool: genRedisPool(insConnNum, kvPasswd, instance, maxIdle, idleTimeout),
-				stopCh:    make(chan struct{}, 1),
-			}
-			instance.ch = make([]chan *Task, 0, 100*insConnNum)
-			for i := 0; i < 100*insConnNum; i++ {
-				instance.ch = append(instance.ch, make(chan *Task))
-			}
-			rand.Seed(time.Now().Unix())
-			// 从一个随机位置开始，防止所有server都从一个ckv开始
-			instance.index = uint32(rand.Intn(100 * insConnNum))
-			instances = append(instances, instance)
-		}
+// NewRedisClient new redis client
+func NewRedisClient(config *Config, opts ...Option) redis.UniversalClient {
+	if config == nil {
+		config = DefaultConfig()
+	}
+	for _, o := range opts {
+		o(config)
+	}
+	var redisClient redis.UniversalClient
+	switch config.DeployMode {
+	case redisSentinel:
+		redisClient = redis.NewFailoverClient(config.FailOverOptions())
+	case redisCluster:
+		redisClient = redis.NewClusterClient(config.ClusterOptions())
+	case redisStandalone:
+		redisClient = redis.NewClient(config.StandaloneOptions())
+	default:
+		redisClient = redis.NewClient(config.StandaloneOptions())
+	}
+	return redisClient
+}
+
+// NewPool init a redis connection pool instance
+func NewPool(ctx context.Context, config *Config, statis plugin.Statis, opts ...Option) *Pool {
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = config.MsgTimeout
 	}
 
+	if config.ReadTimeout == 0 {
+		config.ReadTimeout = config.MsgTimeout
+	}
+
+	redisClient := NewRedisClient(config, opts...)
 	pool := &Pool{
-		meta: &MetaData{
-			insConnNum:  insConnNum,
-			kvPasswd:    kvPasswd,
-			localHost:   localHost,
-			MaxIdle:     maxIdle,
-			IdleTimeout: idleTimeout,
-		},
-		instances:   instances,
-		instanceNum: int32(len(redisInstances)),
+		config:         config,
+		ctx:            ctx,
+		redisClient:    redisClient,
+		recoverTimeSec: time.Now().Unix(),
+		statis:         statis,
+		taskChans:      make([]chan *Task, 0, config.Concurrency),
 	}
 
-	return pool, nil
-}
-
-func genRedisPool(insConnNum int, kvPasswd string, instance *model.Instance, maxIdle, idleTimeout int) *redis.Pool {
-	pool := &redis.Pool{
-		MaxIdle:     maxIdle,
-		MaxActive:   0,
-		IdleTimeout: time.Duration(idleTimeout),
-		Dial: func() (redis.Conn, error) {
-			conn, err := redis.Dial("tcp", instance.Host()+":"+
-				strconv.Itoa(int(instance.Port())), redis.DialPassword(kvPasswd))
-			if err != nil {
-				log.Infof("ERROR: fail init redis: %s", err.Error())
-				return nil, err
-			}
-			return conn, err
-		},
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
-			_, err := c.Do("PING")
-			return err
-		},
+	for i := 0; i < config.Concurrency; i++ {
+		pool.taskChans = append(pool.taskChans, make(chan *Task, 1024))
 	}
 	return pool
 }
 
-/**
- * Update 更新ckv连接池中的节点
- * 重新建立ckv连接
- * 对业务无影响
- */
-func (p *Pool) Update(newKvInstances []*model.Instance) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	change := len(newKvInstances) - int(atomic.LoadInt32(&p.instanceNum))
-	log.Infof("[ckv] update, old ins num:%d, new ins num:%d, change:%d", p.instanceNum, len(newKvInstances), change)
-
-	// 新建一个pool.instances数组
-	var instances []*Instance
-	for _, instance := range newKvInstances {
-		instance := &Instance{
-			redisPool: genRedisPool(p.meta.insConnNum, p.meta.kvPasswd, instance, p.meta.MaxIdle, p.meta.IdleTimeout),
-			stopCh:    make(chan struct{}, 1),
-		}
-		instance.ch = make([]chan *Task, 0, 100*p.meta.insConnNum)
-		for i := 0; i < 100*p.meta.insConnNum; i++ {
-			instance.ch = append(instance.ch, make(chan *Task))
-		}
-		instance.index = uint32(rand.Intn(100 * p.meta.insConnNum))
-		instances = append(instances, instance)
-	}
-
-	// 关闭前一个连接池
-	for i := 0; i < len(p.instances); i++ {
-		close(p.instances[i].stopCh)
-		time.Sleep(10 * time.Millisecond)
-		for j := 0; j < len(p.instances[i].ch); j++ {
-			close(p.instances[i].ch[j])
-		}
-		err := p.instances[i].redisPool.Close()
-		if err != nil {
-			log.Errorf("close redis pool :%s", err)
-		}
-	}
-
-	time.Sleep(10 * time.Millisecond)
-	// 结构体属性重新赋值，并重新开始消费
-	p.instances = instances
-	atomic.StoreInt32(&p.instanceNum, int32(len(p.instances)))
-
-	for i := 0; i < len(p.instances); i++ {
-		for k := 0; k < len(p.instances[i].ch); k++ {
-			go p.worker(i, k)
-		}
-	}
-
-	log.Infof("[redis] update success, node num:%d", len(p.instances))
-
-	return nil
-}
-
-func (p *Pool) checkHasKvInstances(ch chan *Resp) bool {
-	if atomic.LoadInt32(&p.instanceNum) == 0 {
-		go func() {
-			ch <- &Resp{
-				Local: true,
-			}
-		}()
-		return true
-	}
-	return false
-}
-
-/**
- * Get 使用连接池，向redis发起Get请求
- */
-func (p *Pool) Get(id string, ch chan *Resp) { // nolint
-	if p.checkHasKvInstances(ch) {
-		return
+// Get 使用连接池，向redis发起Get请求
+func (p *Pool) Get(id string) *Resp { // nolint
+	if err := p.checkRedisDead(); err != nil {
+		return &Resp{Err: err}
 	}
 	task := &Task{
 		taskType: Get,
 		id:       id,
-		respCh:   ch,
 	}
-
-	insIndex, chIndex := p.genInsChIndex(id)
-	p.instances[insIndex].ch[chIndex] <- task
+	return p.handleTask(task)
 }
 
-/**
- * Set 使用连接池，向redis发起Set请求
- */
-func (p *Pool) Set(id string, status int, beatTime int64, ch chan *Resp) { // nolint
-	if p.checkHasKvInstances(ch) {
-		return
+// Sdd 使用连接池，向redis发起Sdd请求
+func (p *Pool) Sdd(id string, members []string) *Resp { // nolint
+	if err := p.checkRedisDead(); err != nil {
+		return &Resp{Err: err}
+	}
+	task := &Task{
+		taskType: Sadd,
+		id:       id,
+		members:  members,
+	}
+	return p.handleTaskWithRetries(task)
+}
+
+// Srem 使用连接池，向redis发起Srem请求
+func (p *Pool) Srem(id string, members []string) *Resp { // nolint
+	if err := p.checkRedisDead(); err != nil {
+		return &Resp{Err: err}
+	}
+	task := &Task{
+		taskType: Srem,
+		id:       id,
+		members:  members,
+	}
+	return p.handleTaskWithRetries(task)
+}
+
+// RedisObject 序列化对象
+type RedisObject interface {
+	// Serialize 序列化成字符串
+	Serialize(compatible bool) string
+	// Deserialize 反序列为对象
+	Deserialize(value string, compatible bool) error
+}
+
+// Set 使用连接池，向redis发起Set请求
+func (p *Pool) Set(id string, redisObj RedisObject) *Resp { // nolint
+	if err := p.checkRedisDead(); err != nil {
+		return &Resp{Err: err}
 	}
 	task := &Task{
 		taskType: Set,
 		id:       id,
-		status:   status,
-		beatTime: beatTime,
-		respCh:   ch,
+		value:    redisObj.Serialize(p.config.Compatible),
 	}
-
-	insIndex, chIndex := p.genInsChIndex(id)
-	p.instances[insIndex].ch[chIndex] <- task
+	return p.handleTaskWithRetries(task)
 }
 
-/**
- * Del 使用连接池，向redis发起Del请求
- */
-func (p *Pool) Del(id string, ch chan *Resp) { // nolint
+// Del 使用连接池，向redis发起Del请求
+func (p *Pool) Del(id string) *Resp { // nolint
+	if err := p.checkRedisDead(); err != nil {
+		return &Resp{Err: err}
+	}
 	task := &Task{
 		taskType: Del,
 		id:       id,
-		respCh:   ch,
 	}
-
-	insIndex, chIndex := p.genInsChIndex(id)
-	p.instances[insIndex].ch[chIndex] <- task
+	return p.handleTaskWithRetries(task)
 }
 
-/**
- * genInsChIndex 生成index公共方法
- */
-func (p *Pool) genInsChIndex(id string) (int, uint32) {
-	insIndex := String(id) % int(atomic.LoadInt32(&p.instanceNum))
-
-	chIndex := atomic.AddUint32(&p.instances[insIndex].index, 1) % uint32(p.meta.insConnNum*100)
-	return insIndex, chIndex
+func (p *Pool) checkRedisDead() error {
+	if atomic.LoadUint32(&p.redisDead) == 1 {
+		return fmt.Errorf("redis %s is dead", p.config.KvAddr)
+	}
+	return nil
 }
 
-/**
- * Start 启动ckv连接池工作
- */
+// Start 启动ckv连接池工作
 func (p *Pool) Start() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for i := 0; i < len(p.instances); i++ {
-		for k := 0; k < len(p.instances[i].ch); k++ {
-			go p.worker(i, k)
-		}
-	}
-	log.Infof("[redis] redis pool start")
+	wg := &sync.WaitGroup{}
+	wg.Add(p.config.Concurrency)
+	p.startWorkers(wg)
+	go p.checkRedis(wg)
+	log.Infof("[RedisPool]redis pool started")
 }
 
-/**
- * worker 接收任务worker
- */
-func (p *Pool) worker(instanceIndex, chIndex int) {
+func (p *Pool) startWorkers(wg *sync.WaitGroup) {
+	for i := 0; i < p.config.Concurrency; i++ {
+		go p.process(wg, i)
+	}
+}
+
+func (p *Pool) process(wg *sync.WaitGroup, idx int) {
+	log.Infof("[RedisPool]redis worker %d started", idx)
+	ticker := time.NewTicker(p.config.WaitTime)
+	piper := p.redisClient.Pipeline()
+	defer func() {
+		ticker.Stop()
+		_ = piper.Close()
+		wg.Done()
+	}()
+	var tasks []*Task
 	for {
 		select {
-		case task := <-p.instances[instanceIndex].ch[chIndex]:
-			p.handleTask(task, instanceIndex)
-		case <-p.instances[instanceIndex].stopCh:
+		case task := <-p.taskChans[idx]:
+			tasks = append(tasks, task)
+			if len(tasks) >= p.config.MinBatchCount {
+				p.handleTasks(tasks, piper)
+				tasks = nil
+			}
+		case <-ticker.C:
+			if len(tasks) > 0 {
+				p.handleTasks(tasks, piper)
+				tasks = nil
+			}
+		case <-p.ctx.Done():
 			return
 		}
 	}
 }
 
-/**
- * handleTask 任务处理函数
- */
-func (p *Pool) handleTask(task *Task, index int) {
-	if task == nil {
-		log.Errorf("receive nil task")
-		return
+func (p *Pool) handleTasks(tasks []*Task, piper redis.Pipeliner) {
+	cmders := make([]redis.Cmder, len(tasks))
+	for i, task := range tasks {
+		cmders[i] = p.doHandleTask(task, piper)
 	}
-	con := p.instances[index].redisPool.Get()
-	defer con.Close()
-
-	var resp Resp
-	switch task.taskType {
-	case Get:
-		resp.Value, resp.Err = redis.String(con.Do("GET", task.id))
-		task.respCh <- &resp
-	case Set:
-		value := fmt.Sprintf("%d:%d:%s", task.status, task.beatTime, p.meta.localHost)
-		_, resp.Err = con.Do("SET", task.id, value)
-		task.respCh <- &resp
-	case Del:
-		_, resp.Err = con.Do("DEL", task.id)
-		task.respCh <- &resp
-	default:
-		log.Errorf("[ckv] set key:%s type:%d wrong", task.id, task.taskType)
+	_, _ = piper.Exec(context.Background())
+	for i, cmder := range cmders {
+		func(idx int, cmd redis.Cmder) {
+			var resp = &Resp{}
+			task := tasks[idx]
+			defer func() {
+				task.respChan <- resp
+			}()
+			switch typedCmd := cmd.(type) {
+			case *redis.StringCmd:
+				resp.Value, resp.Err = typedCmd.Result()
+				resp.Exists = true
+				if resp.Err == redis.Nil {
+					resp.Err = nil
+					resp.Exists = false
+				}
+			case *redis.StatusCmd:
+				_, resp.Err = typedCmd.Result()
+			case *redis.IntCmd:
+				_, resp.Err = typedCmd.Result()
+			default:
+				resp.Err = fmt.Errorf("unknown type %s for task %s", typedCmd, *task)
+			}
+		}(i, cmder)
 	}
 }
 
-// String 字符串转hash值
-func String(s string) int {
-	v := int(crc32.ChecksumIEEE([]byte(s)))
-	if v >= 0 {
-		return v
+const (
+	redisCheckInterval = 1 * time.Second
+	errCountThreshold  = 2
+	maxCheckCount      = 3
+	retryBackoff       = 30 * time.Millisecond
+)
+
+func sleep(dur time.Duration) {
+	t := time.NewTimer(dur)
+	defer t.Stop()
+
+	<-t.C
+}
+
+// checkRedis check redis alive
+func (p *Pool) checkRedis(wg *sync.WaitGroup) {
+	ticker := time.NewTicker(redisCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			var errCount int
+			for i := 0; i < maxCheckCount; i++ {
+				if !p.doCheckRedis() {
+					errCount++
+				}
+			}
+			if errCount >= errCountThreshold {
+				if atomic.CompareAndSwapUint32(&p.redisDead, 0, 1) {
+					atomic.StoreInt64(&p.recoverTimeSec, 0)
+				}
+			} else {
+				if atomic.CompareAndSwapUint32(&p.redisDead, 1, 0) {
+					atomic.StoreInt64(&p.recoverTimeSec, time.Now().Unix())
+				}
+			}
+		case <-p.ctx.Done():
+			wg.Wait()
+			_ = p.redisClient.Close()
+			return
+		}
 	}
-	if -v >= 0 {
-		return -v
+}
+
+// RecoverTimeSec the time second record when recover
+func (p *Pool) RecoverTimeSec() int64 {
+	return atomic.LoadInt64(&p.recoverTimeSec)
+}
+
+// doCheckRedis test the connection
+func (p *Pool) doCheckRedis() bool {
+	_, err := p.redisClient.Ping(context.Background()).Result()
+
+	return err == nil
+}
+
+const (
+	maxProcessDuration = 1000 * time.Millisecond
+)
+
+var indexer int64
+
+func nextIndex() int64 {
+	value := atomic.AddInt64(&indexer, 1)
+	if value == math.MaxInt64 {
+		atomic.CompareAndSwapInt64(&indexer, value, 0)
+		value = atomic.AddInt64(&indexer, 1)
 	}
-	return 0
+	return value
+}
+
+// handleTaskWithRetries 任务重试执行
+func (p *Pool) handleTaskWithRetries(task *Task) *Resp {
+	var count = 1
+	if p.config.MaxRetry > 0 {
+		count += p.config.MaxRetry
+	}
+	var resp *Resp
+	for i := 0; i < count; i++ {
+		if i > 0 {
+			sleep(retryBackoff)
+		}
+		resp = p.handleTask(task)
+		if resp.Err == nil || !resp.shouldRetry {
+			break
+		}
+		log.Errorf("[RedisPool] fail to handle task %s, retry count %d, err is %v", *task, i, resp.Err)
+	}
+	return resp
+}
+
+// handleTask 任务处理函数
+func (p *Pool) handleTask(task *Task) *Resp {
+	var startTime = time.Now()
+	task.respChan = make(chan *Resp, 1)
+	idx := int(nextIndex()) % len(p.taskChans)
+	select {
+	case p.taskChans[idx] <- task:
+	case <-p.ctx.Done():
+		return &Resp{Err: fmt.Errorf("worker has been stopped while sheduling task %s", *task),
+			Compatible: p.config.Compatible, shouldRetry: false}
+	}
+	var resp *Resp
+	select {
+	case resp = <-task.respChan:
+	case <-p.ctx.Done():
+		return &Resp{Err: fmt.Errorf("worker has been stopped while fetching resp for task %s", *task),
+			Compatible: p.config.Compatible, shouldRetry: false}
+	}
+	resp.Compatible = p.config.Compatible
+	resp.shouldRetry = true
+	p.afterHandleTask(startTime, typeToCommand[task.taskType], task, resp)
+	return resp
+}
+
+const (
+	callResultOk   = 0
+	callResultFail = 1
+)
+
+func (p *Pool) afterHandleTask(startTime time.Time, command string, task *Task, resp *Resp) {
+	costDuration := time.Since(startTime)
+	if costDuration >= maxProcessDuration && task.taskType != Get {
+		log.Warnf("[RedisPool] too slow to process task %s, "+
+			"duration %s, greater than %s", task.String(), costDuration, maxProcessDuration)
+	}
+	code := callResultOk
+	if resp.Err != nil {
+		code = callResultFail
+	}
+	if p.statis != nil {
+		_ = p.statis.AddRedisCall(command, code, costDuration.Nanoseconds())
+	}
+}
+
+func (p *Pool) doHandleTask(task *Task, piper redis.Pipeliner) redis.Cmder {
+	switch task.taskType {
+	case Set:
+		return piper.Set(context.Background(), toRedisKey(task.id, p.config.Compatible), task.value, 0)
+	case Del:
+		return piper.Del(context.Background(), toRedisKey(task.id, p.config.Compatible))
+	case Sadd:
+		return piper.SAdd(context.Background(), task.id, task.members)
+	case Srem:
+		return piper.SRem(context.Background(), task.id, task.members)
+	default:
+		return piper.Get(context.Background(), toRedisKey(task.id, p.config.Compatible))
+	}
 }

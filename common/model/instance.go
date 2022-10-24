@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes/wrappers"
-	api "github.com/polarismesh/polaris-server/common/api/v1"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
+	commontime "github.com/polarismesh/polaris/common/time"
 )
 
 // Instance 组合了api的Instance对象
@@ -29,8 +31,12 @@ type Instance struct {
 	Proto             *api.Instance
 	ServiceID         string
 	ServicePlatformID string
-	Valid             bool
-	ModifyTime        time.Time
+	// Valid Whether it is deleted by logic
+	Valid bool
+	// ModifyTime Update time of instance
+	ModifyTime time.Time
+	// FirstRegis Whether the label instance is the first registration
+	FirstRegis bool
 }
 
 // ID get id
@@ -97,7 +103,7 @@ func (i *Instance) Version() string {
 	return i.Proto.GetVersion().GetValue()
 }
 
-// Priority get priority
+// Priority gets priority
 func (i *Instance) Priority() uint32 {
 	if i.Proto == nil {
 		return 0
@@ -113,7 +119,7 @@ func (i *Instance) Weight() uint32 {
 	return i.Proto.GetWeight().GetValue()
 }
 
-// EnableHealthCheck get enable health check
+// EnableHealthCheck get enables health check
 func (i *Instance) EnableHealthCheck() bool {
 	if i.Proto == nil {
 		return false
@@ -145,7 +151,7 @@ func (i *Instance) Isolate() bool {
 	return i.Proto.GetIsolate().GetValue()
 }
 
-// Location get location
+// Location gets location
 func (i *Instance) Location() *api.Location {
 	if i.Proto == nil {
 		return nil
@@ -256,14 +262,19 @@ func Store2Instance(is *InstanceStore) *Instance {
 			Version:           &wrappers.StringValue{Value: is.Version},
 			Priority:          &wrappers.UInt32Value{Value: is.Priority},
 			Weight:            &wrappers.UInt32Value{Value: is.Weight},
-			EnableHealthCheck: &wrappers.BoolValue{Value: int2bool(is.EnableHealthCheck)},
-			Healthy:           &wrappers.BoolValue{Value: int2bool(is.HealthStatus)},
-			Isolate:           &wrappers.BoolValue{Value: int2bool(is.Isolate)},
-			Metadata:          is.Meta,
-			LogicSet:          &wrappers.StringValue{Value: is.LogicSet},
-			Ctime:             &wrappers.StringValue{Value: int64Time2String(is.CreateTime)},
-			Mtime:             &wrappers.StringValue{Value: int64Time2String(is.ModifyTime)},
-			Revision:          &wrappers.StringValue{Value: is.Revision},
+			EnableHealthCheck: &wrappers.BoolValue{Value: Int2bool(is.EnableHealthCheck)},
+			Healthy:           &wrappers.BoolValue{Value: Int2bool(is.HealthStatus)},
+			Location: &api.Location{
+				Region: &wrappers.StringValue{Value: is.Region},
+				Zone:   &wrappers.StringValue{Value: is.Zone},
+				Campus: &wrappers.StringValue{Value: is.Campus},
+			},
+			Isolate:  &wrappers.BoolValue{Value: Int2bool(is.Isolate)},
+			Metadata: is.Meta,
+			LogicSet: &wrappers.StringValue{Value: is.LogicSet},
+			Ctime:    &wrappers.StringValue{Value: commontime.Int64Time2String(is.CreateTime)},
+			Mtime:    &wrappers.StringValue{Value: commontime.Int64Time2String(is.ModifyTime)},
+			Revision: &wrappers.StringValue{Value: is.Revision},
 		},
 		ServiceID:  is.ServiceID,
 		Valid:      flag2valid(is.Flag),

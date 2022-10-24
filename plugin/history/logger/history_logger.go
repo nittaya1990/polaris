@@ -18,13 +18,9 @@
 package logger
 
 import (
-	"fmt"
-
-	"github.com/natefinch/lumberjack"
-	"github.com/polarismesh/polaris-server/common/model"
-	"github.com/polarismesh/polaris-server/plugin"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	commonLog "github.com/polarismesh/polaris/common/log"
+	"github.com/polarismesh/polaris/common/model"
+	"github.com/polarismesh/polaris/plugin"
 )
 
 // 把操作记录记录到日志文件中
@@ -33,14 +29,15 @@ const (
 	PluginName = "HistoryLogger"
 )
 
-// 初始化注册函数
+var log = commonLog.RegisterScope(PluginName, "", 0)
+
+// init 初始化注册函数
 func init() {
 	plugin.RegisterPlugin(PluginName, &HistoryLogger{})
 }
 
 // HistoryLogger 历史记录logger
 type HistoryLogger struct {
-	logger *zap.Logger
 }
 
 // Name 返回插件名字
@@ -50,56 +47,15 @@ func (h *HistoryLogger) Name() string {
 
 // Destroy 销毁插件
 func (h *HistoryLogger) Destroy() error {
-	return h.logger.Sync()
+	return log.Sync()
 }
 
 // Initialize 插件初始化
 func (h *HistoryLogger) Initialize(c *plugin.ConfigEntry) error {
-	// 日志的encode
-	encCfg := zapcore.EncoderConfig{
-		TimeKey: "time",
-		//LevelKey:       "level",
-		NameKey:        "scope",
-		CallerKey:      "caller",
-		MessageKey:     "msg",
-		StacktraceKey:  "stack",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder,
-		EncodeDuration: zapcore.StringDurationEncoder,
-		//EncodeTime:     TimeEncoder,
-	}
-
-	// 同步到文件中的配置 TODO，参数来自于外部配置文件
-	w := zapcore.AddSync(&lumberjack.Logger{
-		Filename:   "./log/polaris-history.log", // TODO
-		MaxSize:    500,                         // megabytes TODO
-		MaxBackups: 10,
-		MaxAge:     15, // days TODO
-	})
-	//multiSync := zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), w)
-
-	// 日志
-	core := zapcore.NewCore(zapcore.NewConsoleEncoder(encCfg), w, zap.DebugLevel)
-	logger := zap.New(core)
-	h.logger = logger
-
 	return nil
 }
 
 // Record 记录操作记录到日志中
 func (h *HistoryLogger) Record(entry *model.RecordEntry) {
-	var str string
-	switch model.GetResourceType(entry.ResourceType) {
-	case model.ServiceType:
-		str = fmt.Sprintf("resource_type=%s;operation_type=%s;namespace=%s;service=%s;context=%s;operator=%s;ctime=%s",
-			string(entry.ResourceType), string(entry.OperationType), entry.Namespace, entry.Service,
-			entry.Context, entry.Operator, entry.CreateTime.Format("2006-01-02 15:04:05"))
-	case model.MeshType:
-		str = fmt.Sprintf(
-			"resource_type=%s;operation_type=%s;mesh_id=%s;revision=%s;context=%s;operator=%s;ctime=%s",
-			string(entry.ResourceType), string(entry.OperationType), entry.MeshID, entry.Revision,
-			entry.Context, entry.Operator, entry.CreateTime.Format("2006-01-02 15:04:05"))
-	}
-	h.logger.Info(str)
+	log.Info(entry.String())
 }

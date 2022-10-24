@@ -21,39 +21,40 @@ import (
 	"os"
 	"sync"
 
-	"github.com/polarismesh/polaris-server/common/log"
+	"go.uber.org/zap"
+
+	commonLog "github.com/polarismesh/polaris/common/log"
 )
 
 var (
 	// 插件初始化原子变量
-	authOnce = &sync.Once{}
+	authOnce sync.Once
 )
 
-/**
- * Auth AUTH插件接口
- */
+// Auth AUTH插件接口
 type Auth interface {
 	Plugin
 
 	Allow(platformID, platformToken string) bool
 
+	CheckPermission(reqCtx interface{}, authRule interface{}) (bool, error)
+
 	IsWhiteList(ip string) bool
 }
 
-/**
- * GetAuth 获取Auth插件
- */
+// GetAuth 获取Auth插件
 func GetAuth() Auth {
 	c := &config.Auth
 
 	plugin, exist := pluginSet[c.Name]
 	if !exist {
+		commonLog.GetScopeOrDefaultByName(c.Name).Error("[Plugin][Auth] not found", zap.String("name", c.Name))
 		return nil
 	}
 
 	authOnce.Do(func() {
 		if err := plugin.Initialize(c); err != nil {
-			log.Errorf("plugin init err: %s", err.Error())
+			commonLog.GetScopeOrDefaultByName(c.Name).Errorf("plugin init err: %s", err.Error())
 			os.Exit(-1)
 		}
 	})

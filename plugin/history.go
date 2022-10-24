@@ -21,13 +21,13 @@ import (
 	"os"
 	"sync"
 
-	"github.com/polarismesh/polaris-server/common/log"
-	"github.com/polarismesh/polaris-server/common/model"
+	commonLog "github.com/polarismesh/polaris/common/log"
+	"github.com/polarismesh/polaris/common/model"
 )
 
 var (
 	// 插件初始化原子变量
-	historyOnce = &sync.Once{}
+	historyOnce sync.Once
 )
 
 // History 历史记录插件
@@ -46,7 +46,7 @@ func GetHistory() History {
 
 	historyOnce.Do(func() {
 		if err := plugin.Initialize(c); err != nil {
-			log.Errorf("plugin init err: %s", err.Error())
+			commonLog.GetScopeOrDefaultByName(c.Name).Errorf("plugin init err: %s", err.Error())
 			os.Exit(-1)
 		}
 	})

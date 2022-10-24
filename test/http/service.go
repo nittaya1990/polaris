@@ -23,9 +23,11 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"time"
 
-	api "github.com/polarismesh/polaris-server/common/api/v1"
 	"github.com/golang/protobuf/jsonpb"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
 )
 
 /**
@@ -74,7 +76,7 @@ func (c *Client) CreateServices(services []*api.Service) (*api.BatchWriteRespons
 	ret, err := GetBatchWriteResponse(response)
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		return nil, err
+		return ret, err
 	}
 
 	return checkCreateServicesResponse(ret, services)
@@ -157,7 +159,7 @@ func (c *Client) GetServices(services []*api.Service) error {
 	params := map[string][]interface{}{
 		"namespace": {services[0].GetNamespace().GetValue()},
 	}
-
+	time.Sleep(2 * time.Second)
 	url = c.CompleteURL(url, params)
 	response, err := c.SendRequest("GET", url, nil)
 	if err != nil {
@@ -177,7 +179,7 @@ func (c *Client) GetServices(services []*api.Service) error {
 	servicesSize := len(services)
 
 	if ret.GetAmount() == nil || ret.GetAmount().GetValue() != uint32(servicesSize) {
-		return errors.New("invalid batch amount")
+		return fmt.Errorf("invalid batch amount, expect %d, actual is %v", servicesSize, ret.GetAmount())
 	}
 
 	if ret.GetSize() == nil || ret.GetSize().GetValue() != uint32(servicesSize) {
@@ -267,7 +269,6 @@ func compareService(correctItem *api.Service, item *api.Service) bool {
 	correctCmdbMod2 := correctItem.GetCmdbMod2().GetValue()
 	correctCmdbMod3 := correctItem.GetCmdbMod3().GetValue()
 	correctComment := correctItem.GetComment().GetValue()
-	correctOwners := correctItem.GetOwners().GetValue()
 
 	name := item.GetName().GetValue()
 	namespace := item.GetNamespace().GetValue()
@@ -279,12 +280,11 @@ func compareService(correctItem *api.Service, item *api.Service) bool {
 	cmdbMod2 := item.GetCmdbMod2().GetValue()
 	cmdbMod3 := item.GetCmdbMod3().GetValue()
 	comment := item.GetComment().GetValue()
-	owners := item.GetOwners().GetValue()
 
 	if correctName == name && correctNamespace == namespace && reflect.DeepEqual(correctMeta, meta) &&
 		correctPorts == ports && correctBusiness == business && correctDepartment == department &&
 		correctCmdbMod1 == cmdbMod1 && correctCmdbMod2 == cmdbMod2 && correctCmdbMod3 == cmdbMod3 &&
-		correctComment == comment && correctOwners == owners {
+		correctComment == comment {
 		return true
 	}
 	return false

@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/polarismesh/polaris-server/common/log"
+	"github.com/polarismesh/polaris/common/log"
 )
 
 // Conn 包装net.Conn
@@ -80,5 +80,5 @@ func (c *Conn) Read(b []byte) (int, error) {
 
 // 判断conn是否还有效
 func (c *Conn) isValid() bool {
-	return c.closed == false
+	return !c.closed
 }

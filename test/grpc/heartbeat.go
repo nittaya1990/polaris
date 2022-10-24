@@ -22,18 +22,17 @@ import (
 	"fmt"
 	"time"
 
-	api "github.com/polarismesh/polaris-server/common/api/v1"
-	"github.com/polarismesh/polaris-server/naming"
 	"google.golang.org/grpc/metadata"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
+	"github.com/polarismesh/polaris/common/utils"
 )
 
-/**
- * @brief 上报心跳
- */
+// Heartbeat 上报心跳
 func (c *Client) Heartbeat(instance *api.Instance) error {
 	fmt.Printf("\nheartbeat\n")
 
-	md := metadata.Pairs("request-id", naming.NewUUID())
+	md := metadata.Pairs("request-id", utils.NewUUID())
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)

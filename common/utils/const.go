@@ -25,3 +25,49 @@ const (
 	// PolarisRequestID request_id
 	PolarisRequestID = "Request-Id"
 )
+
+var (
+	// LocalHost local host
+	LocalHost = "127.0.0.1"
+)
+
+const (
+	// HeaderAuthTokenKey auth token key
+	HeaderAuthTokenKey string = "X-Polaris-Token"
+	// HeaderIsOwnerKey is owner key
+	HeaderIsOwnerKey string = "X-Is-Owner"
+	// HeaderUserIDKey user id key
+	HeaderUserIDKey string = "X-User-ID"
+	// HeaderOwnerIDKey owner id key
+	HeaderOwnerIDKey string = "X-Owner-ID"
+	// HeaderUserRoleKey user role key
+	HeaderUserRoleKey string = "X-Polaris-User-Role"
+
+	// ContextAuthTokenKey auth token key
+	ContextAuthTokenKey = StringContext(HeaderAuthTokenKey)
+	// ContextIsOwnerKey is owner key
+	ContextIsOwnerKey = StringContext(HeaderIsOwnerKey)
+	// ContextUserIDKey user id key
+	ContextUserIDKey = StringContext(HeaderUserIDKey)
+	// ContextOwnerIDKey owner id key
+	ContextOwnerIDKey = StringContext(HeaderOwnerIDKey)
+	// ContextUserRoleIDKey user role key
+	ContextUserRoleIDKey = StringContext(HeaderUserRoleKey)
+	// ContextAuthContextKey auth context key
+	ContextAuthContextKey = StringContext("X-Polaris-AuthContext")
+	// ContextUserNameKey users name key
+	ContextUserNameKey = StringContext("X-User-Name")
+	// ContextClientAddress client address key
+	ContextClientAddress = StringContext("client-address")
+	// ContextOpenAsyncRegis open async register key
+	ContextOpenAsyncRegis = StringContext("client-asyncRegis")
+	// ContextGrpcHeader grpc header key
+	ContextGrpcHeader = StringContext("grpc-header")
+)
+
+const (
+	// EmptyErrString empty error string
+	EmptyErrString = "empty"
+	// NilErrString null pointer error string
+	NilErrString = "nil"
+)

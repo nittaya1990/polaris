@@ -22,7 +22,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -39,13 +38,16 @@ type Scope struct {
 	callerSkip  int
 
 	// set by the Configure method and adjustable dynamically
-	outputLevel     atomic.Value
-	stackTraceLevel atomic.Value
-	logCallers      atomic.Value
+	outputLevel     Level
+	stackTraceLevel Level
+	logCallers      bool
+	pt              *patchTable
 }
 
-var scopes = make(map[string]*Scope)
-var lock = sync.RWMutex{}
+var (
+	scopes = map[string]*Scope{}
+	lock   sync.RWMutex
+)
 
 // RegisterScope registers a new logging scope. If the same name is used multiple times
 // for a single process, the same Scope struct is returned.
@@ -69,8 +71,7 @@ func RegisterScope(name string, description string, callerSkip int) *Scope {
 		s.SetOutputLevel(InfoLevel)
 		s.SetStackTraceLevel(NoneLevel)
 		s.SetLogCallers(false)
-
-		if name != DefaultScopeName {
+		if name != DefaultLoggerName {
 			s.nameToEmit = name
 		}
 
@@ -86,6 +87,16 @@ func FindScope(scope string) *Scope {
 	defer lock.RUnlock()
 
 	s := scopes[scope]
+	return s
+}
+
+func GetScopeOrDefaultByName(name string) *Scope {
+	lock.RLock()
+	defer lock.RUnlock()
+	s := scopes[name]
+	if s == nil {
+		s = scopes[DefaultLoggerName]
+	}
 	return s
 }
 
@@ -262,6 +273,10 @@ func (s *Scope) Description() string {
 	return s.description
 }
 
+func (s *Scope) getPathTable() *patchTable {
+	return s.pt
+}
+
 const callerSkipOffset = 2
 
 func (s *Scope) emit(level zapcore.Level, dumpStack bool, msg string, fields []zapcore.Field) {
@@ -280,8 +295,8 @@ func (s *Scope) emit(level zapcore.Level, dumpStack bool, msg string, fields []z
 		e.Stack = zap.Stack("").String
 	}
 
-	pt := funcs.Load().(patchTable)
-	if pt.write != nil {
+	pt := s.getPathTable()
+	if pt != nil && pt.write != nil {
 		if err := pt.write(e, fields); err != nil {
 			_, _ = fmt.Fprintf(pt.errorSink, "%v log write error: %v\n", time.Now(), err)
 			_ = pt.errorSink.Sync()
@@ -291,30 +306,39 @@ func (s *Scope) emit(level zapcore.Level, dumpStack bool, msg string, fields []z
 
 // SetOutputLevel adjusts the output level associated with the scope.
 func (s *Scope) SetOutputLevel(l Level) {
-	s.outputLevel.Store(l)
+	s.outputLevel = l
 }
 
 // GetOutputLevel returns the output level associated with the scope.
 func (s *Scope) GetOutputLevel() Level {
-	return s.outputLevel.Load().(Level)
+	return s.outputLevel
 }
 
 // SetStackTraceLevel adjusts the stack tracing level associated with the scope.
 func (s *Scope) SetStackTraceLevel(l Level) {
-	s.stackTraceLevel.Store(l)
+	s.stackTraceLevel = l
 }
 
 // GetStackTraceLevel returns the stack tracing level associated with the scope.
 func (s *Scope) GetStackTraceLevel() Level {
-	return s.stackTraceLevel.Load().(Level)
+	return s.stackTraceLevel
 }
 
 // SetLogCallers adjusts the output level associated with the scope.
 func (s *Scope) SetLogCallers(logCallers bool) {
-	s.logCallers.Store(logCallers)
+	s.logCallers = logCallers
 }
 
 // GetLogCallers returns the output level associated with the scope.
 func (s *Scope) GetLogCallers() bool {
-	return s.logCallers.Load().(bool)
+	return s.logCallers
+}
+
+// Sync 调用log的Sync方法
+func (s *Scope) Sync() error {
+	pt := s.getPathTable()
+	if pt != nil && pt.sync != nil {
+		return pt.sync()
+	}
+	return nil
 }

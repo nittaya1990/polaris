@@ -18,12 +18,11 @@
 package main
 
 import (
-	"github.com/polarismesh/polaris-server/cmd"
+	_ "go.uber.org/automaxprocs"
+
+	"github.com/polarismesh/polaris/cmd"
 )
 
-/**
- * @brief 主函数
- */
 func main() {
 	cmd.Execute()
 }

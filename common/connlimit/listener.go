@@ -27,7 +27,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/polarismesh/polaris-server/common/log"
+
+	"github.com/polarismesh/polaris/common/log"
 )
 
 const (
@@ -40,7 +41,7 @@ const (
 type counter struct {
 	size       int32
 	actives    map[string]*Conn // 活跃的连接
-	mu         sync.Mutex
+	mu         *sync.RWMutex
 	lastAccess int64
 }
 
@@ -49,14 +50,12 @@ func newCounter() *counter {
 	return &counter{
 		size:       1,
 		actives:    make(map[string]*Conn),
-		mu:         sync.Mutex{},
+		mu:         &sync.RWMutex{},
 		lastAccess: time.Now().Unix(),
 	}
 }
 
-/**
- * Listener 包装 net.Listener
- */
+// Listener 包装 net.Listener
 type Listener struct {
 	net.Listener
 	protocol             string             // 协议，主要用以日志记录与全局对象索引
@@ -80,7 +79,7 @@ func NewListener(l net.Listener, protocol string, config *Config) (net.Listener,
 		log.Errorf("[ConnLimit] listener is missing protocol")
 		return nil, errors.New("listener is missing protocol")
 	}
-	if config == nil || config.OpenConnLimit == false {
+	if config == nil || !config.OpenConnLimit {
 		log.Infof("[ConnLimit][%s] apiserver is not open conn limit", protocol)
 		return l, nil
 	}
@@ -149,9 +148,9 @@ func (l *Listener) GetHostConnCount(host string) int32 {
 	var connNum int32
 	if value, ok := l.conns.Load(host); ok {
 		c := value.(*counter)
-		c.mu.Lock()
+		c.mu.RLock()
 		connNum = c.size
-		c.mu.Unlock()
+		c.mu.RUnlock()
 	}
 
 	return connNum
@@ -188,12 +187,12 @@ func (l *Listener) GetHostActiveConns(host string) map[string]*Conn {
 	}
 
 	ct := obj.(*counter)
-	ct.mu.Lock()
+	ct.mu.RLock()
 	out := make(map[string]*Conn, len(ct.actives))
 	for address, conn := range ct.actives {
 		out[address] = conn
 	}
-	ct.mu.Unlock()
+	ct.mu.RUnlock()
 
 	return out
 }
@@ -201,7 +200,7 @@ func (l *Listener) GetHostActiveConns(host string) map[string]*Conn {
 // GetHostConnStats 获取客户端连接的stat信息
 func (l *Listener) GetHostConnStats(host string) []*HostConnStat {
 	loadStat := func(h string, ct *counter) *HostConnStat {
-		ct.mu.Lock()
+		ct.mu.RLock()
 		stat := &HostConnStat{
 			Host:       h,
 			Amount:     ct.size,
@@ -211,7 +210,7 @@ func (l *Listener) GetHostConnStats(host string) []*HostConnStat {
 		for client := range ct.actives {
 			stat.Actives = append(stat.Actives, client)
 		}
-		ct.mu.Unlock()
+		ct.mu.RUnlock()
 		return stat
 	}
 
@@ -242,8 +241,8 @@ func (l *Listener) GetHostConnection(host string, port int) *Conn {
 
 	ct := obj.(*counter)
 	target := fmt.Sprintf("%s:%d", host, port)
-	ct.mu.Lock()
-	defer ct.mu.Unlock()
+	ct.mu.RLock()
+	defer ct.mu.RUnlock()
 	for address, conn := range ct.actives {
 		if address == target {
 			return conn
@@ -394,13 +393,13 @@ func (l *Listener) purgeExpireCounterHandler() {
 	l.conns.Range(func(key, value interface{}) bool {
 		scanCount++
 		ct := value.(*counter)
-		ct.mu.Lock()
+		ct.mu.RLock()
 		if ct.size == 0 && time.Now().Unix()-ct.lastAccess > l.purgeCounterExpire {
 			// log.Infof("[Listener][%s] purge expire counter: %s", l.protocol, key.(string))
 			l.conns.Delete(key)
 			purgeCount++
 		}
-		ct.mu.Unlock()
+		ct.mu.RUnlock()
 		return true
 	})
 

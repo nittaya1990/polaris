@@ -19,76 +19,11 @@ package utils
 
 import (
 	"encoding/hex"
-	"strings"
 
-	uuid "github.com/google/uuid"
-	api "github.com/polarismesh/polaris-server/common/api/v1"
-	"github.com/polarismesh/polaris-server/common/model"
+	"github.com/google/uuid"
 )
 
-// CreateInstanceModel 创建存储层服务实例模型
-func CreateInstanceModel(serviceID string, req *api.Instance) *model.Instance {
-	// 默认为健康的
-	healthy := true
-	if req.GetHealthy() != nil {
-		healthy = req.GetHealthy().GetValue()
-	}
-
-	// 默认为不隔离的
-	isolate := false
-	if req.GetIsolate() != nil {
-		isolate = req.GetIsolate().GetValue()
-	}
-
-	// 权重默认是100
-	var weight uint32 = 100
-	if req.GetWeight() != nil {
-		weight = req.GetWeight().GetValue()
-	}
-
-	instance := &model.Instance{
-		ServiceID: serviceID,
-	}
-	uuidBytes := uuid.New()
-	protoIns := &api.Instance{
-		Id:       req.GetId(),
-		Host:     NewStringValue(strings.TrimSpace(req.GetHost().GetValue())),
-		VpcId:    req.GetVpcId(),
-		Port:     req.GetPort(),
-		Protocol: req.GetProtocol(),
-		Version:  req.GetVersion(),
-		Priority: req.GetPriority(),
-		Weight:   NewUInt32Value(weight),
-		Healthy:  NewBoolValue(healthy),
-		Isolate:  NewBoolValue(isolate),
-		Location: req.Location,
-		Metadata: req.Metadata,
-		LogicSet: req.GetLogicSet(),
-		Revision: NewStringValue(hex.EncodeToString(uuidBytes[:])), // 更新版本号
-	}
-
-	// health Check，healthCheck不能为空，且没有显示把enable_health_check置为false
-	// 如果create的时候，打开了healthCheck，那么实例模式是unhealthy，必须要一次心跳才会healthy
-	if req.GetHealthCheck().GetHeartbeat() != nil &&
-		(req.GetEnableHealthCheck() == nil || req.GetEnableHealthCheck().GetValue()) {
-		protoIns.EnableHealthCheck = NewBoolValue(true)
-		protoIns.HealthCheck = req.HealthCheck
-		protoIns.HealthCheck.Type = api.HealthCheck_HEARTBEAT
-		// ttl range: (0, 60]
-		ttl := protoIns.GetHealthCheck().GetHeartbeat().GetTtl().GetValue()
-		if ttl == 0 || ttl > 60 {
-			if protoIns.HealthCheck.Heartbeat.Ttl == nil {
-				protoIns.HealthCheck.Heartbeat.Ttl = NewUInt32Value(5)
-			}
-			protoIns.HealthCheck.Heartbeat.Ttl.Value = 5
-		}
-		// 开启健康检查，且没有代入健康状态，则健康状态默认都是false
-		protoIns.Healthy.Value = false
-	}
-
-	instance.Proto = protoIns
-	return instance
-}
+var emptyVal = struct{}{}
 
 // ConvertFilter map[string]string to  map[string][]string
 func ConvertFilter(filters map[string]string) map[string][]string {
@@ -103,8 +38,8 @@ func ConvertFilter(filters map[string]string) map[string][]string {
 	return newFilters
 }
 
-// CollectFilterFields collect filters key to slice
-func CollectFilterFields(filters map[string]string) []string {
+// CollectMapKeys collect filters key to slice
+func CollectMapKeys(filters map[string]string) []string {
 	fields := make([]string, 0, len(filters))
 	for k := range filters {
 		fields = append(fields, k)
@@ -113,10 +48,40 @@ func CollectFilterFields(filters map[string]string) []string {
 	return fields
 }
 
-/**
- * @brief 判断名字是否为通配名字，只支持前缀索引(名字最后为*)
- */
+// IsWildName 判断名字是否为通配名字，只支持前缀索引(名字最后为*)
 func IsWildName(name string) bool {
 	length := len(name)
 	return length >= 1 && name[length-1:length] == "*"
+}
+
+// NewUUID 返回一个随机的UUID
+func NewUUID() string {
+	uuidBytes := uuid.New()
+	return hex.EncodeToString(uuidBytes[:])
+}
+
+// NewUUID 返回一个随机的UUID
+func NewRoutingV2UUID() string {
+	uuidBytes := uuid.New()
+	return hex.EncodeToString(uuidBytes[:])
+}
+
+// NewV2Revision 返回一个随机的UUID
+func NewV2Revision() string {
+	uuidBytes := uuid.New()
+	return "v2-" + hex.EncodeToString(uuidBytes[:])
+}
+
+// StringSliceDeDuplication 字符切片去重
+func StringSliceDeDuplication(s []string) []string {
+	m := make(map[string]struct{}, len(s))
+	res := make([]string, 0, len(s))
+	for k := range s {
+		if _, ok := m[s[k]]; !ok {
+			m[s[k]] = emptyVal
+			res = append(res, s[k])
+		}
+	}
+
+	return res
 }

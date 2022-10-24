@@ -20,20 +20,20 @@ package grpc
 import (
 	"context"
 	"fmt"
-	api "github.com/polarismesh/polaris-server/common/api/v1"
-	"github.com/polarismesh/polaris-server/naming"
-	"google.golang.org/grpc/metadata"
 	"io"
 	"time"
+
+	"google.golang.org/grpc/metadata"
+
+	api "github.com/polarismesh/polaris/common/api/v1"
+	"github.com/polarismesh/polaris/common/utils"
 )
 
-/**
- * @brief 统一发现函数
- */
-func (c *Client) Discover(drt api.DiscoverRequest_DiscoverRequestType, service *api.Service) error {
+// Discover 统一发现函数
+func (c *Client) Discover(drt api.DiscoverRequest_DiscoverRequestType, service *api.Service, hook func(resp *api.DiscoverResponse)) error {
 	fmt.Printf("\ndiscover\n")
 
-	md := metadata.Pairs("request-id", naming.NewUUID())
+	md := metadata.Pairs("request-id", utils.NewUUID())
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -53,6 +53,7 @@ func (c *Client) Discover(drt api.DiscoverRequest_DiscoverRequestType, service *
 		fmt.Printf("%v\n", err)
 		return err
 	}
+
 	worker.CloseSend()
 
 	for {
@@ -66,17 +67,15 @@ func (c *Client) Discover(drt api.DiscoverRequest_DiscoverRequestType, service *
 			return err
 		}
 
-		fmt.Printf("%v\n", rsp)
+		hook(rsp)
 	}
 }
 
-/**
- * @brief 统一发现函数
- */
+// DiscoverRequest 统一发现函数
 func (c *Client) DiscoverRequest(request *api.DiscoverRequest) (*api.DiscoverResponse, error) {
 	fmt.Printf("\ndiscover\n")
 
-	md := metadata.Pairs("request-id", naming.NewUUID())
+	md := metadata.Pairs("request-id", utils.NewUUID())
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)

@@ -22,8 +22,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/polarismesh/polaris-server/apiserver"
-	"github.com/polarismesh/polaris-server/common/log"
+	"github.com/polarismesh/polaris/apiserver"
+	"github.com/polarismesh/polaris/common/log"
 )
 
 var linuxSignals = []os.Signal{
@@ -46,6 +46,9 @@ func RunMainLoop(servers []apiserver.Apiserver, errCh chan error) {
 				if err := RestartServers(errCh); err != nil {
 					log.Errorf("restart servers err: %s", err.Error())
 					return
+				} else {
+					log.Infof("restart servers success: %+v", s)
+					continue
 				}
 			}
 
